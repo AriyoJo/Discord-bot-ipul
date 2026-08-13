@@ -6,11 +6,11 @@ from datetime import timedelta
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from flask import flask
-from threading import thread
+from flask import Flask
+from threading import Thread
 import database as db
 
-app = flask('')
+app = Flask('')
 
 @app.route('/')
 def home():
@@ -146,6 +146,12 @@ async def check_spam(message: discord.Message) -> bool:
 async def on_ready():
     print(f"Bot berhasil login sebagai {bot.user}")
 
+    try:
+        await db.client.admin.command('ping')
+        print("🟢 MongoDb: Berhasil")
+    except Exception as e:
+        print(f"🔴 MongoDB: Gagal, Error:{e}")
+
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -158,12 +164,12 @@ async def on_message(message: discord.Message):
     if kena_mute:
         return  # jangan proses XP atau command lain untuk pesan spam terakhir ini
 
-    user = db.get_user(message.guild.id, message.author.id)
+    user = await db.get_user(message.guild.id, message.author.id)
     now = int(time.time())
 
     if now - user["last_message_ts"] >= XP_COOLDOWN_SECONDS:
         xp_gain = random.randint(XP_MIN, XP_MAX)
-        result = db.add_xp(message.guild.id, message.author.id, xp_gain, now)
+        result = await db.add_xp(message.guild.id, message.author.id, xp_gain, now)
 
         if result["leveled_up"]:
             embed = discord.Embed(
@@ -197,9 +203,9 @@ async def dadu(ctx):
 async def rank(ctx, member: discord.Member = None):
     """Cek level dan XP diri sendiri atau member lain. Contoh: !rank @nama"""
     target = member or ctx.author
-    user = db.get_user(ctx.guild.id, target.id)
+    user = await db.get_user(ctx.guild.id, target.id)
     xp_needed = db.xp_needed_for_level(user["level"])
-    position = db.get_rank_position(ctx.guild.id, user["level"], user["xp"])
+    position = await db.get_rank_position(ctx.guild.id, user["level"], user["xp"])
 
     bar_length = 20
     filled = round((user["xp"] / xp_needed) * bar_length)
@@ -222,7 +228,7 @@ async def rank(ctx, member: discord.Member = None):
 async def leaderboard(ctx, jumlah: int = 10):
     """Lihat papan peringkat level server ini. Contoh: !leaderboard 15"""
     jumlah = min(jumlah, 25)
-    rows = db.get_leaderboard(ctx.guild.id, jumlah)
+    rows = await db.get_leaderboard(ctx.guild.id, jumlah)
 
     if not rows:
         await ctx.send("Belum ada data XP di server ini.")
@@ -251,7 +257,7 @@ ADMIN_ROLE_NAME = 1411476274224042115  # ganti dengan nama role kamu (harus pers
 @commands.has_role(ADMIN_ROLE_NAME)
 async def setlevel(ctx, member: discord.Member, level: int):
     """[Admin] Atur level member secara manual. Contoh: !setlevel @nama 5"""
-    db.set_level(ctx.guild.id, member.id, level)
+    await db.set_level(ctx.guild.id, member.id, level)
     await ctx.send(f"✅ Level {member.mention} telah diatur ke **{level}**.")
 
     role_baru = await give_level_roles(member, level)
@@ -271,7 +277,7 @@ async def setlevel_error(ctx, error):
 @commands.has_role(ADMIN_ROLE_NAME)
 async def addxp(ctx, member: discord.Member, jumlah: int):
     """[Admin] Tambah XP member secara manual. Contoh: !addxp @nama 50 (bisa negatif untuk mengurangi)"""
-    result = db.add_xp(ctx.guild.id, member.id, jumlah, int(time.time()))
+    result = await db.add_xp(ctx.guild.id, member.id, jumlah, int(time.time()))
 
     await ctx.send(f"✅ Menambahkan **{jumlah} XP** ke {member.mention}.")
 
