@@ -6,8 +6,25 @@ from datetime import timedelta
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-
+from flask import flask
+from threading import thread
 import database as db
+
+app = flask('')
+
+@app.route('/')
+def home():
+    return "Bot Discord Aktif 24/7"
+
+def run_web():
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host='0.0.0.0', port=port)
+
+def keep_alive():
+    t = Thread(target=run_web)
+    t.start()
+
+keep_alive()
 
 # Muat token dari file .env (jangan pernah taruh token langsung di kode!)
 load_dotenv()
@@ -121,7 +138,6 @@ async def check_spam(message: discord.Message) -> bool:
         state["warned"] = True
         await message.channel.send(
             f"⚠️ {message.author.mention}, diam atau aku mute. "
-            f"beneran gw mute yak."
         )
 
     return False
