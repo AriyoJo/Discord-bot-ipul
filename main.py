@@ -6,25 +6,8 @@ from datetime import timedelta
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
-from flask import Flask
-from threading import Thread
+
 import database as db
-
-app = Flask('')
-
-@app.route('/')
-def home():
-    return "Bot Discord Aktif 24/7"
-
-def run_web():
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host='0.0.0.0', port=port)
-
-def keep_alive():
-    t = Thread(target=run_web)
-    t.start()
-
-keep_alive()
 
 # Muat token dari file .env (jangan pernah taruh token langsung di kode!)
 load_dotenv()
@@ -121,11 +104,11 @@ async def check_spam(message: discord.Message) -> bool:
         try:
             await member.timeout(
                 timedelta(minutes=SPAM_MUTE_DURATION_MINUTES),
-                reason="Brisik woi jan spam",
+                reason="Terdeteksi spam pesan yang sama berulang kali",
             )
             await message.channel.send(
                 f"🔇 {member.mention} di-**mute selama {SPAM_MUTE_DURATION_MINUTES} menit** "
-                f"MAMPUS GW MUTE AJG."
+                f"karena spam pesan yang sama berulang kali."
             )
         except discord.Forbidden:
             await message.channel.send(
@@ -137,7 +120,8 @@ async def check_spam(message: discord.Message) -> bool:
     if state["count"] >= SPAM_WARNING_COUNT and not state["warned"]:
         state["warned"] = True
         await message.channel.send(
-            f"⚠️ {message.author.mention}, diam atau aku mute. "
+            f"⚠️ {message.author.mention}, tolong jangan spam pesan yang sama berulang kali. "
+            f"Ini bisa berujung mute."
         )
 
     return False
@@ -145,12 +129,6 @@ async def check_spam(message: discord.Message) -> bool:
 @bot.event
 async def on_ready():
     print(f"Bot berhasil login sebagai {bot.user}")
-
-    try:
-        await db.client.admin.command('ping')
-        print("🟢 MongoDb: Berhasil")
-    except Exception as e:
-        print(f"🔴 MongoDB: Gagal, Error:{e}")
 
 
 @bot.event
@@ -164,12 +142,12 @@ async def on_message(message: discord.Message):
     if kena_mute:
         return  # jangan proses XP atau command lain untuk pesan spam terakhir ini
 
-    user = await db.get_user(message.guild.id, message.author.id)
+    user = db.get_user(message.guild.id, message.author.id)
     now = int(time.time())
 
     if now - user["last_message_ts"] >= XP_COOLDOWN_SECONDS:
         xp_gain = random.randint(XP_MIN, XP_MAX)
-        result = await db.add_xp(message.guild.id, message.author.id, xp_gain, now)
+        result = db.add_xp(message.guild.id, message.author.id, xp_gain, now)
 
         if result["leveled_up"]:
             embed = discord.Embed(
@@ -205,10 +183,10 @@ async def join(ctx):
     if ctx.author.voice is None or ctx.author.voice.channel is None:
         await ctx.send("Kamu harus masuk ke voice channel dulu sebelum memanggil bot.")
         return
- 
+
     channel = ctx.author.voice.channel
     voice_client = ctx.guild.voice_client
- 
+
     try:
         if voice_client is None:
             await channel.connect()
@@ -222,8 +200,8 @@ async def join(ctx):
         await ctx.send("Bot tidak punya izin untuk masuk/bicara di voice channel itu.")
     except discord.ClientException as e:
         await ctx.send(f"Gagal bergabung ke voice channel: {e}")
- 
- 
+
+
 @bot.command()
 async def leave(ctx):
     """Keluarkan bot dari voice channel. Contoh: !leave"""
@@ -231,7 +209,7 @@ async def leave(ctx):
     if voice_client is None:
         await ctx.send("Bot tidak sedang berada di voice channel manapun.")
         return
- 
+
     await voice_client.disconnect()
     await ctx.send("👋 Bot keluar dari voice channel.")
 
@@ -240,9 +218,9 @@ async def leave(ctx):
 async def rank(ctx, member: discord.Member = None):
     """Cek level dan XP diri sendiri atau member lain. Contoh: !rank @nama"""
     target = member or ctx.author
-    user = await db.get_user(ctx.guild.id, target.id)
+    user = db.get_user(ctx.guild.id, target.id)
     xp_needed = db.xp_needed_for_level(user["level"])
-    position = await db.get_rank_position(ctx.guild.id, user["level"], user["xp"])
+    position = db.get_rank_position(ctx.guild.id, user["level"], user["xp"])
 
     bar_length = 20
     filled = round((user["xp"] / xp_needed) * bar_length)
@@ -265,7 +243,7 @@ async def rank(ctx, member: discord.Member = None):
 async def leaderboard(ctx, jumlah: int = 10):
     """Lihat papan peringkat level server ini. Contoh: !leaderboard 15"""
     jumlah = min(jumlah, 25)
-    rows = await db.get_leaderboard(ctx.guild.id, jumlah)
+    rows = db.get_leaderboard(ctx.guild.id, jumlah)
 
     if not rows:
         await ctx.send("Belum ada data XP di server ini.")
@@ -294,7 +272,7 @@ ADMIN_ROLE_NAME = 1411476274224042115  # ganti dengan nama role kamu (harus pers
 @commands.has_role(ADMIN_ROLE_NAME)
 async def setlevel(ctx, member: discord.Member, level: int):
     """[Admin] Atur level member secara manual. Contoh: !setlevel @nama 5"""
-    await db.set_level(ctx.guild.id, member.id, level)
+    db.set_level(ctx.guild.id, member.id, level)
     await ctx.send(f"✅ Level {member.mention} telah diatur ke **{level}**.")
 
     role_baru = await give_level_roles(member, level)
@@ -314,7 +292,7 @@ async def setlevel_error(ctx, error):
 @commands.has_role(ADMIN_ROLE_NAME)
 async def addxp(ctx, member: discord.Member, jumlah: int):
     """[Admin] Tambah XP member secara manual. Contoh: !addxp @nama 50 (bisa negatif untuk mengurangi)"""
-    result = await db.add_xp(ctx.guild.id, member.id, jumlah, int(time.time()))
+    result = db.add_xp(ctx.guild.id, member.id, jumlah, int(time.time()))
 
     await ctx.send(f"✅ Menambahkan **{jumlah} XP** ke {member.mention}.")
 
