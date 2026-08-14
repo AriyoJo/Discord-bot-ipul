@@ -200,6 +200,43 @@ async def dadu(ctx):
 
 
 @bot.command()
+async def join(ctx):
+    """Panggil bot masuk ke voice channel yang sedang kamu tempati. Contoh: !join"""
+    if ctx.author.voice is None or ctx.author.voice.channel is None:
+        await ctx.send("Kamu harus masuk ke voice channel dulu sebelum memanggil bot.")
+        return
+ 
+    channel = ctx.author.voice.channel
+    voice_client = ctx.guild.voice_client
+ 
+    try:
+        if voice_client is None:
+            await channel.connect()
+            await ctx.send(f"🔊 Bot bergabung ke **{channel.name}**.")
+        elif voice_client.channel.id != channel.id:
+            await voice_client.move_to(channel)
+            await ctx.send(f"🔊 Bot pindah ke **{channel.name}**.")
+        else:
+            await ctx.send(f"Bot sudah ada di **{channel.name}**.")
+    except discord.Forbidden:
+        await ctx.send("Bot tidak punya izin untuk masuk/bicara di voice channel itu.")
+    except discord.ClientException as e:
+        await ctx.send(f"Gagal bergabung ke voice channel: {e}")
+ 
+ 
+@bot.command()
+async def leave(ctx):
+    """Keluarkan bot dari voice channel. Contoh: !leave"""
+    voice_client = ctx.guild.voice_client
+    if voice_client is None:
+        await ctx.send("Bot tidak sedang berada di voice channel manapun.")
+        return
+ 
+    await voice_client.disconnect()
+    await ctx.send("👋 Bot keluar dari voice channel.")
+
+
+@bot.command()
 async def rank(ctx, member: discord.Member = None):
     """Cek level dan XP diri sendiri atau member lain. Contoh: !rank @nama"""
     target = member or ctx.author
