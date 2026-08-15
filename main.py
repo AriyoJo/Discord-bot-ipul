@@ -25,6 +25,17 @@ client = genai.Client(
 app = Flask('')
 
 
+=======
+import discord
+from discord.ext import commands
+from dotenv import load_dotenv
+from flask import Flask
+from threading import Thread
+import database as db
+
+app = Flask('')
+
+
 @app.route('/')
 def home():
     return "Bot Discord Aktif 24/7"
@@ -39,11 +50,11 @@ def keep_alive():
 
 keep_alive()
 
-
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 # ====== KONFIGURASI ======
+
 XP_MIN = 15              
 XP_MAX = 25               
 XP_COOLDOWN_SECONDS = 60  
@@ -60,6 +71,20 @@ TIKTOK_NOTIFY_CHANNEL_ID = 1537375115149578252
 TIKTOK_CHECK_INTERVAL_MINUTES = 15                 
 
 
+=======
+XP_MIN = 15              # XP minimum per pesan
+XP_MAX = 25               # XP maksimum per pesan
+XP_COOLDOWN_SECONDS = 60  # Jeda minimum antar pesan yang menghasilkan XP
+
+# ====== KONFIGURASI ANTI-SPAM ======
+SPAM_WARNING_COUNT = 3        # Pesan sama ke-berapa untuk mulai diberi peringatan
+SPAM_MUTE_COUNT = 5           # Pesan sama ke-berapa untuk langsung di-mute (timeout)
+SPAM_TIME_WINDOW_SECONDS = 20 # Jeda maksimum antar pesan supaya masih dianggap satu rentetan spam
+SPAM_MUTE_DURATION_MINUTES = 10  # Lama mute (timeout) dalam menit
+
+# Role reward per level. Key = level, Value = nama role (harus persis sama dengan nama role di server)
+# Member akan otomatis mendapat role ini begitu mencapai level tsb (dan tetap menyimpan role level sebelumnya).
+
 LEVEL_ROLES = {
     10: 1527384406917124316,
     20: 1533494275420066022,
@@ -70,6 +95,12 @@ LEVEL_ROLES = {
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True 
+=======
+# Mengatur hak akses (intents)
+intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True  # supaya bisa ambil nama member di leaderboard
+
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -124,11 +155,12 @@ async def check_spam(message: discord.Message) -> bool:
         state["last_ts"] = now
         return False
 
- 
     state["count"] += 1
     state["last_ts"] = now
 
     if state["count"] >= SPAM_MUTE_COUNT:
+
+        # Reset supaya tidak langsung mute lagi berkali-kali begitu timeout berakhir/dicabut
         state["count"] = 0
         state["warned"] = False
 
@@ -167,6 +199,7 @@ async def on_ready():
     except Exception as e:
         print(f"🔴 MongoDB: Gagal, Error:{e}")
 
+<<<<<<< HEAD
     if not check_tiktok.is_running():
         check_tiktok.start()
 
@@ -225,16 +258,25 @@ async def before_check_tiktok():
 
 @bot.event
 async def on_message(message: discord.Message):
+
+@bot.event
+async def on_message(message: discord.Message):
     if message.author.bot or message.guild is None:
         await bot.process_commands(message)
         return
 
+<<<<<<< HEAD
     if message.mention_everyone and "@everyone" in message.content:
         await message.channel.send("Aja sendiri")
 
     kena_mute = await check_spam(message)
     if kena_mute:
         return 
+=======
+    kena_mute = await check_spam(message)
+    if kena_mute:
+        return  
+
     user = await db.get_user(message.guild.id, message.author.id)
     now = int(time.time())
 
@@ -244,7 +286,10 @@ async def on_message(message: discord.Message):
 
         if result["leveled_up"]:
             embed = discord.Embed(
+
                 description=f"🎉 Anjay {message.author.mention}, lu naik ke **Level {result['new_level']}**!",
+                description=f"🎉 Selamat {message.author.mention}, kamu naik ke **Level {result['new_level']}**!",
+                (Commit pertama file tertentu)
                 color=discord.Color.green(),
             )
             await message.channel.send(embed=embed)
@@ -252,7 +297,10 @@ async def on_message(message: discord.Message):
             role_baru = await give_level_roles(message.author, result["new_level"])
             if role_baru:
                 await message.channel.send(
+
                     f"🎁 {message.author.mention} Nih gw kasih role: **{', '.join(role_baru)}**"
+                )
+                    f"🎁 {message.author.mention} mendapatkan role: **{', '.join(role_baru)}**"
                 )
 
     await bot.process_commands(message)
@@ -273,7 +321,11 @@ async def dadu(ctx):
 async def join(ctx):
     """Panggil bot masuk ke voice channel yang sedang kamu tempati. Contoh: !join"""
     if ctx.author.voice is None or ctx.author.voice.channel is None:
+<<<<<<< HEAD
         await ctx.send("Lumasuk dulu kocak.")
+=======
+        await ctx.send("Kamu harus masuk ke voice channel dulu sebelum memanggil bot.")
+>>>>>>> 45a2f61 (Commit pertama file tertentu)
         return
  
     channel = ctx.author.voice.channel
@@ -357,7 +409,11 @@ async def leaderboard(ctx, jumlah: int = 10):
     await ctx.send(embed=embed)
 
 
+<<<<<<< HEAD
 ADMIN_ROLE_NAME = 1411476274224042115 
+=======
+ADMIN_ROLE_NAME = 1411476274224042115  # ganti dengan nama role kamu (harus persis sama, case-sensitive)
+>>>>>>> 45a2f61 (Commit pertama file tertentu)
 
 
 @bot.command()
@@ -409,6 +465,7 @@ async def addxp_error(ctx, error):
     elif isinstance(error, commands.BadArgument):
         await ctx.send("Taro angka nyak. Contoh: `!addxp @nama 50`")
 
+<<<<<<< HEAD
 @bot.command()
 async def ipul(ctx, *, pertanyaan):
     try:
@@ -425,6 +482,8 @@ async def ipul(ctx, *, pertanyaan):
     except Exception as e:
         print(f"[AI ERROR] {type(e).__name__}: {e}")
         await ctx.send("Ai error, bntr dah")
+=======
+>>>>>>> 45a2f61 (Commit pertama file tertentu)
 
 # Jalankan bot
 if TOKEN is None:
