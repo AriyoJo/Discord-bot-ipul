@@ -3,12 +3,14 @@ import time
 import random
 from collections import defaultdict
 from datetime import timedelta
+import aiohttp
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 import database as db
+import tiktok_watcher
 
 app = Flask('')
 
@@ -40,6 +42,11 @@ SPAM_WARNING_COUNT = 3        # Pesan sama ke-berapa untuk mulai diberi peringat
 SPAM_MUTE_COUNT = 5           # Pesan sama ke-berapa untuk langsung di-mute (timeout)
 SPAM_TIME_WINDOW_SECONDS = 20 # Jeda maksimum antar pesan supaya masih dianggap satu rentetan spam
 SPAM_MUTE_DURATION_MINUTES = 10  # Lama mute (timeout) dalam menit
+
+# ====== KONFIGURASI NOTIFIKASI TIKTOK ======
+TIKTOK_USERNAME = "poiloristo"     # username TikTok TANPA @, contoh: "tiktok"
+TIKTOK_NOTIFY_CHANNEL_ID = 1537375115149578252         # ID channel Discord tujuan notifikasi
+TIKTOK_CHECK_INTERVAL_MINUTES = 15                    # Seberapa sering bot mengecek TikTok
 
 # Role reward per level. Key = level, Value = nama role (harus persis sama dengan nama role di server)
 # Member akan otomatis mendapat role ini begitu mencapai level tsb (dan tetap menyimpan role level sebelumnya).
@@ -151,6 +158,58 @@ async def on_ready():
         print("🟢 MongoDb: Berhasil")
     except Exception as e:
         print(f"🔴 MongoDB: Gagal, Error:{e}")
+
+    if not check_tiktok.is_running():
+        check_tiktok.start()
+
+
+# Menyimpan status terakhir supaya tidak kirim notifikasi berulang untuk hal yang sama.
+# Catatan: nilai ini reset ke None/False setiap bot restart, jadi video/live yang sudah
+# lama tidak akan dianggap "baru" lagi setelah bot pertama kali cek sekali.
+_last_video_id = None
+_was_live = False
+
+
+@tasks.loop(minutes=TIKTOK_CHECK_INTERVAL_MINUTES)
+async def check_tiktok():
+    global _last_video_id, _was_live
+
+    channel = bot.get_channel(TIKTOK_NOTIFY_CHANNEL_ID)
+    if channel is None:
+        print("[TikTok] Channel notifikasi tidak ditemukan. Cek TIKTOK_NOTIFY_CHANNEL_ID.")
+        return
+
+    async with aiohttp.ClientSession() as session:
+        # --- Cek postingan/video baru ---
+        video = await tiktok_watcher.get_latest_video(session, TIKTOK_USERNAME)
+        if video is not None:
+            if _last_video_id is None:
+                # Baseline saat bot pertama kali nyala, supaya tidak notif video lama
+                _last_video_id = video["id"]
+            elif video["id"] != _last_video_id:
+                _last_video_id = video["id"]
+                embed = discord.Embed(
+                    title="🎬 Postingan TikTok baru!",
+                    description=video["desc"],
+                    url=video["url"],
+                    color=discord.Color.from_rgb(255, 0, 80),
+                )
+                embed.set_footer(text=f"@{TIKTOK_USERNAME}")
+                await channel.send(embed=embed)
+
+        # --- Cek status live ---
+        live_now = await tiktok_watcher.is_live(session, TIKTOK_USERNAME)
+        if live_now and not _was_live:
+            await channel.send(
+                f"🔴 **@{TIKTOK_USERNAME} sedang LIVE di TikTok sekarang!**\n"
+                f"https://www.tiktok.com/@{TIKTOK_USERNAME}/live"
+            )
+        _was_live = live_now
+
+
+@check_tiktok.before_loop
+async def before_check_tiktok():
+    await bot.wait_until_ready()
 
 
 @bot.event
