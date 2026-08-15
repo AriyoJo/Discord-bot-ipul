@@ -219,9 +219,9 @@ async def join(ctx):
         else:
             await ctx.send(f"Bot sudah ada di **{channel.name}**.")
     except discord.Forbidden:
-        await ctx.send("Bot tidak punya izin untuk masuk/bicara di voice channel itu.")
+        await ctx.send("Gw gabisa masuk ke channel itu kocak")
     except discord.ClientException as e:
-        await ctx.send(f"Gagal bergabung ke voice channel: {e}")
+        await ctx.send(f"Ga bisa le: {e}")
  
  
 @bot.command()
@@ -229,11 +229,11 @@ async def leave(ctx):
     """Keluarkan bot dari voice channel. Contoh: !leave"""
     voice_client = ctx.guild.voice_client
     if voice_client is None:
-        await ctx.send("Bot tidak sedang berada di voice channel manapun.")
+        await ctx.send("Gw kaga masuk channel woi.")
         return
  
     await voice_client.disconnect()
-    await ctx.send("👋 Bot keluar dari voice channel.")
+    await ctx.send("Cabut lah")
 
 
 @bot.command()
@@ -268,7 +268,7 @@ async def leaderboard(ctx, jumlah: int = 10):
     rows = await db.get_leaderboard(ctx.guild.id, jumlah)
 
     if not rows:
-        await ctx.send("Belum ada data XP di server ini.")
+        await ctx.send("Malas gada leiderbrot")
         return
 
     medali = ["🥇", "🥈", "🥉"]
@@ -280,7 +280,7 @@ async def leaderboard(ctx, jumlah: int = 10):
         lines.append(f"{label} {nama} — Level {row['level']} ({row['xp']} XP)")
 
     embed = discord.Embed(
-        title=f"🏆 Papan Peringkat — {ctx.guild.name}",
+        title=f"🏆 Papan Yapping — {ctx.guild.name}",
         description="\n".join(lines),
         color=discord.Color.gold(),
     )
@@ -305,9 +305,9 @@ async def setlevel(ctx, member: discord.Member, level: int):
 @setlevel.error
 async def setlevel_error(ctx, error):
     if isinstance(error, (commands.MissingRole, commands.MissingAnyRole, commands.MissingPermissions)):
-        await ctx.send(f"Kamu perlu role **{ADMIN_ROLE_NAME}** untuk menggunakan command ini.")
+        await ctx.send(f"Lu butuh **{ADMIN_ROLE_NAME}** Buat ngebabu gw.")
     elif isinstance(error, commands.MemberNotFound):
-        await ctx.send("Member tidak ditemukan.")
+        await ctx.send("Isi member dulu kocak")
 
 
 @bot.command()
@@ -320,7 +320,7 @@ async def addxp(ctx, member: discord.Member, jumlah: int):
 
     if result["leveled_up"]:
         embed = discord.Embed(
-            description=f"🎉 Selamat {member.mention}, kamu naik ke **Level {result['new_level']}**!",
+            description=f"🎉 Cihuy {member.mention}, kamu naik ke **Level {result['new_level']}**!",
             color=discord.Color.green(),
         )
         await ctx.send(embed=embed)
@@ -333,11 +333,11 @@ async def addxp(ctx, member: discord.Member, jumlah: int):
 @addxp.error
 async def addxp_error(ctx, error):
     if isinstance(error, (commands.MissingRole, commands.MissingAnyRole, commands.MissingPermissions)):
-        await ctx.send(f"Kamu perlu role **{ADMIN_ROLE_NAME}** untuk menggunakan command ini.")
+        await ctx.send(f"Lu butuh **{ADMIN_ROLE_NAME}** Buat ngebabu gw.")
     elif isinstance(error, commands.MemberNotFound):
-        await ctx.send("Member tidak ditemukan.")
+        await ctx.send("Isi member dulu woi")
     elif isinstance(error, commands.BadArgument):
-        await ctx.send("Jumlah XP harus berupa angka. Contoh: `!addxp @nama 50`")
+        await ctx.send("Taro angka nyak. Contoh: `!addxp @nama 50`")
 
 
 # Jalankan bot
