@@ -173,7 +173,7 @@ async def on_message(message: discord.Message):
 
         if result["leveled_up"]:
             embed = discord.Embed(
-                description=f"🎉 Selamat {message.author.mention}, kamu naik ke **Level {result['new_level']}**!",
+                description=f"🎉 Anjay {message.author.mention}, lu naik ke **Level {result['new_level']}**!",
                 color=discord.Color.green(),
             )
             await message.channel.send(embed=embed)
@@ -181,7 +181,7 @@ async def on_message(message: discord.Message):
             role_baru = await give_level_roles(message.author, result["new_level"])
             if role_baru:
                 await message.channel.send(
-                    f"🎁 {message.author.mention} mendapatkan role: **{', '.join(role_baru)}**"
+                    f"🎁 {message.author.mention} Nih gw kasih role: **{', '.join(role_baru)}**"
                 )
 
     # Penting: tetap proses command (!ping, !dadu, dll) setelah hitung XP
@@ -203,7 +203,7 @@ async def dadu(ctx):
 async def join(ctx):
     """Panggil bot masuk ke voice channel yang sedang kamu tempati. Contoh: !join"""
     if ctx.author.voice is None or ctx.author.voice.channel is None:
-        await ctx.send("Kamu harus masuk ke voice channel dulu sebelum memanggil bot.")
+        await ctx.send("Lumasuk dulu kocak.")
         return
  
     channel = ctx.author.voice.channel
