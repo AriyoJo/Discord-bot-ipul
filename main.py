@@ -179,26 +179,34 @@ async def check_tiktok():
         print("[TikTok] Channel notifikasi tidak ditemukan. Cek TIKTOK_NOTIFY_CHANNEL_ID.")
         return
 
+    print(f"[TikTok] Mengecek @{TIKTOK_USERNAME}...")
+
     async with aiohttp.ClientSession() as session:
         # --- Cek postingan/video baru ---
         video = await tiktok_watcher.get_latest_video(session, TIKTOK_USERNAME)
-        if video is not None:
-            if _last_video_id is None:
-                # Baseline saat bot pertama kali nyala, supaya tidak notif video lama
-                _last_video_id = video["id"]
-            elif video["id"] != _last_video_id:
-                _last_video_id = video["id"]
-                embed = discord.Embed(
-                    title="🎬 Postingan TikTok baru!",
-                    description=video["desc"],
-                    url=video["url"],
-                    color=discord.Color.from_rgb(255, 0, 80),
-                )
-                embed.set_footer(text=f"@{TIKTOK_USERNAME}")
-                await channel.send(embed=embed)
+        if video is None:
+            print("[TikTok] Gagal mengambil data video (lihat error di atas kalau ada).")
+        elif _last_video_id is None:
+            # Baseline saat bot pertama kali nyala, supaya tidak notif video lama
+            _last_video_id = video["id"]
+            print(f"[TikTok] Baseline diset ke video ID {video['id']} (video ini TIDAK akan dinotif).")
+        elif video["id"] != _last_video_id:
+            _last_video_id = video["id"]
+            print(f"[TikTok] Video baru terdeteksi: {video['id']}")
+            embed = discord.Embed(
+                title="🎬 Postingan TikTok baru!",
+                description=video["desc"],
+                url=video["url"],
+                color=discord.Color.from_rgb(255, 0, 80),
+            )
+            embed.set_footer(text=f"@{TIKTOK_USERNAME}")
+            await channel.send(embed=embed)
+        else:
+            print(f"[TikTok] Tidak ada video baru (masih ID {video['id']}).")
 
         # --- Cek status live ---
         live_now = await tiktok_watcher.is_live(session, TIKTOK_USERNAME)
+        print(f"[TikTok] Status live: {live_now}")
         if live_now and not _was_live:
             await channel.send(
                 f"🔴 **@{TIKTOK_USERNAME} sedang LIVE di TikTok sekarang!**\n"
