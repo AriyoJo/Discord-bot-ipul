@@ -227,6 +227,9 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
+    if message.mention_everyone and "@everyone" in message.content:
+        await message.channel.send("Aja sendiri")
+
     kena_mute = await check_spam(message)
     if kena_mute:
         return  # jangan proses XP atau command lain untuk pesan spam terakhir ini
