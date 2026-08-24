@@ -412,15 +412,15 @@ async def addxp_error(ctx, error):
 @bot.command()
 async def ipul(ctx, *, pertanyaan):
     try:
-    response = client.models.generate_content(
-        model="gemini-3.6-flash",
-        contents=pertanyaan
+        response = client.models.generate_content(
+            model="gemini-3.6-flash",
+            contents=pertanyaan
     )
 
-    jawaban = response.text
+        jawaban = response.text
 
-    for i in range(0, len(jawaban), 1900):
-        await ctx.send(jawaban[i:i+1900])
+        for i in range(0, len(jawaban), 1900):
+            await ctx.send(jawaban[i:i+1900])
 
     except Exception as e:
         print(f"[AI ERROR] {type(e).__name__}: {e}")
