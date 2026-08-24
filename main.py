@@ -410,7 +410,7 @@ async def addxp_error(ctx, error):
         await ctx.send("Taro angka nyak. Contoh: `!addxp @nama 50`")
 
 @bot.command()
-async def ai(ctx, *, pertanyaan):
+async def ipul(ctx, *, pertanyaan):
     response = client.models.generate_content(
         model="gemini-2.5-flash",
         contents=pertanyaan
