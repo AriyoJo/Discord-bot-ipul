@@ -412,7 +412,7 @@ async def addxp_error(ctx, error):
 @bot.command()
 async def ipul(ctx, *, pertanyaan):
     response = client.models.generate_content(
-        model="gemini-2.5-flash",
+        model="gemini-3.6-flash",
         contents=pertanyaan
     )
 
