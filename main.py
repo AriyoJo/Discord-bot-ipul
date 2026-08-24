@@ -9,10 +9,21 @@ from discord.ext import commands, tasks
 from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
+from google import genai
 import database as db
 import tiktok_watcher
 
+load_dotenv()
+
+TOKEN = os.getenv("DISCORD_TOKEN")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+
+client = genai.Client(
+    api_key=GEMINI_API_KEY
+)
+
 app = Flask('')
+
 
 @app.route('/')
 def home():
@@ -28,38 +39,37 @@ def keep_alive():
 
 keep_alive()
 
-# Muat token dari file .env (jangan pernah taruh token langsung di kode!)
+
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 # ====== KONFIGURASI ======
-XP_MIN = 15              # XP minimum per pesan
-XP_MAX = 25               # XP maksimum per pesan
-XP_COOLDOWN_SECONDS = 60  # Jeda minimum antar pesan yang menghasilkan XP
+XP_MIN = 15              
+XP_MAX = 25               
+XP_COOLDOWN_SECONDS = 60  
 
 # ====== KONFIGURASI ANTI-SPAM ======
-SPAM_WARNING_COUNT = 3        # Pesan sama ke-berapa untuk mulai diberi peringatan
-SPAM_MUTE_COUNT = 5           # Pesan sama ke-berapa untuk langsung di-mute (timeout)
-SPAM_TIME_WINDOW_SECONDS = 20 # Jeda maksimum antar pesan supaya masih dianggap satu rentetan spam
-SPAM_MUTE_DURATION_MINUTES = 10  # Lama mute (timeout) dalam menit
+SPAM_WARNING_COUNT = 3        
+SPAM_MUTE_COUNT = 5           
+SPAM_TIME_WINDOW_SECONDS = 20 
+SPAM_MUTE_DURATION_MINUTES = 10  
 
 # ====== KONFIGURASI NOTIFIKASI TIKTOK ======
-TIKTOK_USERNAME = "poiloristo"     # username TikTok TANPA @, contoh: "tiktok"
-TIKTOK_NOTIFY_CHANNEL_ID = 1537375115149578252         # ID channel Discord tujuan notifikasi
-TIKTOK_CHECK_INTERVAL_MINUTES = 15                    # Seberapa sering bot mengecek TikTok
+TIKTOK_USERNAME = "poiloristo"    
+TIKTOK_NOTIFY_CHANNEL_ID = 1537375115149578252   
+TIKTOK_CHECK_INTERVAL_MINUTES = 15                 
 
-# Role reward per level. Key = level, Value = nama role (harus persis sama dengan nama role di server)
-# Member akan otomatis mendapat role ini begitu mencapai level tsb (dan tetap menyimpan role level sebelumnya).
+
 LEVEL_ROLES = {
     10: 1527384406917124316,
     20: 1533494275420066022,
     50: 1537386450146951218,
 }
 
-# Mengatur hak akses (intents)
+
 intents = discord.Intents.default()
 intents.message_content = True
-intents.members = True  # supaya bisa ambil nama member di leaderboard
+intents.members = True 
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -89,8 +99,7 @@ async def give_level_roles(member: discord.Member, level: int) -> list[str]:
     return diberikan
 
 
-# Menyimpan status spam per user (key = user_id), berlaku LINTAS SEMUA CHANNEL di server.
-# Struktur: { user_id: {"content": str, "count": int, "last_ts": float, "warned": bool} }
+
 spam_tracker = defaultdict(lambda: {"content": None, "count": 0, "last_ts": 0.0, "warned": False})
 
 
@@ -107,7 +116,7 @@ async def check_spam(message: discord.Message) -> bool:
     now = time.time()
     state = spam_tracker[message.author.id]
 
-    # Pesan beda dari sebelumnya, atau jeda terlalu lama -> mulai hitungan baru
+
     if content != state["content"] or (now - state["last_ts"]) > SPAM_TIME_WINDOW_SECONDS:
         state["content"] = content
         state["count"] = 1
@@ -115,12 +124,11 @@ async def check_spam(message: discord.Message) -> bool:
         state["last_ts"] = now
         return False
 
-    # Pesan sama, masih dalam rentang waktu -> lanjutkan hitungan (lintas channel manapun)
+ 
     state["count"] += 1
     state["last_ts"] = now
 
     if state["count"] >= SPAM_MUTE_COUNT:
-        # Reset supaya tidak langsung mute lagi berkali-kali begitu timeout berakhir/dicabut
         state["count"] = 0
         state["warned"] = False
 
@@ -163,9 +171,7 @@ async def on_ready():
         check_tiktok.start()
 
 
-# Menyimpan status terakhir supaya tidak kirim notifikasi berulang untuk hal yang sama.
-# Catatan: nilai ini reset ke None/False setiap bot restart, jadi video/live yang sudah
-# lama tidak akan dianggap "baru" lagi setelah bot pertama kali cek sekali.
+
 _last_video_id = None
 _was_live = False
 
@@ -182,12 +188,10 @@ async def check_tiktok():
     print(f"[TikTok] Mengecek @{TIKTOK_USERNAME}...")
 
     async with aiohttp.ClientSession() as session:
-        # --- Cek postingan/video baru ---
         video = await tiktok_watcher.get_latest_video(session, TIKTOK_USERNAME)
         if video is None:
             print("[TikTok] Gagal mengambil data video (lihat error di atas kalau ada).")
         elif _last_video_id is None:
-            # Baseline saat bot pertama kali nyala, supaya tidak notif video lama
             _last_video_id = video["id"]
             print(f"[TikTok] Baseline diset ke video ID {video['id']} (video ini TIDAK akan dinotif).")
         elif video["id"] != _last_video_id:
@@ -204,7 +208,6 @@ async def check_tiktok():
         else:
             print(f"[TikTok] Tidak ada video baru (masih ID {video['id']}).")
 
-        # --- Cek status live ---
         live_now = await tiktok_watcher.is_live(session, TIKTOK_USERNAME)
         print(f"[TikTok] Status live: {live_now}")
         if live_now and not _was_live:
@@ -222,7 +225,6 @@ async def before_check_tiktok():
 
 @bot.event
 async def on_message(message: discord.Message):
-    # Jangan proses XP untuk pesan dari bot atau di luar server (DM)
     if message.author.bot or message.guild is None:
         await bot.process_commands(message)
         return
@@ -232,8 +234,7 @@ async def on_message(message: discord.Message):
 
     kena_mute = await check_spam(message)
     if kena_mute:
-        return  # jangan proses XP atau command lain untuk pesan spam terakhir ini
-
+        return 
     user = await db.get_user(message.guild.id, message.author.id)
     now = int(time.time())
 
@@ -254,7 +255,6 @@ async def on_message(message: discord.Message):
                     f"🎁 {message.author.mention} Nih gw kasih role: **{', '.join(role_baru)}**"
                 )
 
-    # Penting: tetap proses command (!ping, !dadu, dll) setelah hitung XP
     await bot.process_commands(message)
 
 
@@ -357,7 +357,7 @@ async def leaderboard(ctx, jumlah: int = 10):
     await ctx.send(embed=embed)
 
 
-ADMIN_ROLE_NAME = 1411476274224042115  # ganti dengan nama role kamu (harus persis sama, case-sensitive)
+ADMIN_ROLE_NAME = 1411476274224042115 
 
 
 @bot.command()
@@ -409,6 +409,14 @@ async def addxp_error(ctx, error):
     elif isinstance(error, commands.BadArgument):
         await ctx.send("Taro angka nyak. Contoh: `!addxp @nama 50`")
 
+@bot.command()
+async def ai(ctx, *, pertanyaan):
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=pertanyaan
+    )
+
+    await ctx.send(response.text)
 
 # Jalankan bot
 if TOKEN is None:
