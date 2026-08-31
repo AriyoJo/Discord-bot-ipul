@@ -232,7 +232,7 @@ async def on_message(message: discord.Message):
     if message.mention_everyone and "@everyone" in message.content:
         await message.channel.send("Aja sendiri")
 
-    if message.content.lower().strip() == "mole"
+    if message.content.lower().strip() == "mole":
         await message.channel.send("Aja Sendiri")
 
     kena_mute = await check_spam(message)
