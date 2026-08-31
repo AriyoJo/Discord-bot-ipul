@@ -25,27 +25,6 @@ client = genai.Client(
 app = Flask('')
 
 
-import discord
-from discord.ext import commands, tasks
-from dotenv import load_dotenv
-from flask import Flask
-from threading import Thread
-from google import genai
-import database as db
-import tiktok_watcher
-
-load_dotenv()
-
-TOKEN = os.getenv("DISCORD_TOKEN")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-
-client = genai.Client(
-    api_key=GEMINI_API_KEY
-)
-
-app = Flask('')
-
-
 @app.route('/')
 def home():
     return "Bot Discord Aktif 24/7"
@@ -59,37 +38,15 @@ def keep_alive():
     t.start()
 
 keep_alive()
+
+
 load_dotenv()
 TOKEN = os.getenv("DISCORD_TOKEN")
 
 # ====== KONFIGURASI ======
-
-
 XP_MIN = 15              
 XP_MAX = 25               
 XP_COOLDOWN_SECONDS = 60  
-
-# ====== KONFIGURASI ANTI-SPAM ======
-SPAM_WARNING_COUNT = 3        
-SPAM_MUTE_COUNT = 5           
-SPAM_TIME_WINDOW_SECONDS = 20 
-SPAM_MUTE_DURATION_MINUTES = 10  
-
-# ====== KONFIGURASI NOTIFIKASI TIKTOK ======
-TIKTOK_USERNAME = "poiloristo"    
-TIKTOK_NOTIFY_CHANNEL_ID = 1537375115149578252   
-TIKTOK_CHECK_INTERVAL_MINUTES = 15                 
-
-
-=======
-XP_MIN = 15              # XP minimum per pesan
-XP_MAX = 25               # XP maksimum per pesan
-XP_COOLDOWN_SECONDS = 60  # Jeda minimum antar pesan yang menghasilkan XP
-=======
-XP_MIN = 15              
-XP_MAX = 25               
-XP_COOLDOWN_SECONDS = 60  
-
 
 # ====== KONFIGURASI ANTI-SPAM ======
 SPAM_WARNING_COUNT = 3        
@@ -113,7 +70,6 @@ LEVEL_ROLES = {
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True 
-
 
 bot = commands.Bot(command_prefix="!", intents=intents)
 
@@ -168,6 +124,7 @@ async def check_spam(message: discord.Message) -> bool:
         state["last_ts"] = now
         return False
 
+ 
     state["count"] += 1
     state["last_ts"] = now
 
@@ -210,10 +167,6 @@ async def on_ready():
     except Exception as e:
         print(f"🔴 MongoDB: Gagal, Error:{e}")
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 1f09e3a (prepareotomatisasi)
     if not check_tiktok.is_running():
         check_tiktok.start()
 
@@ -269,12 +222,6 @@ async def check_tiktok():
 async def before_check_tiktok():
     await bot.wait_until_ready()
 
-<<<<<<< HEAD
-
-@bot.event
-async def on_message(message: discord.Message):
-=======
->>>>>>> 1f09e3a (prepareotomatisasi)
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -282,24 +229,12 @@ async def on_message(message: discord.Message):
         await bot.process_commands(message)
         return
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 1f09e3a (prepareotomatisasi)
     if message.mention_everyone and "@everyone" in message.content:
         await message.channel.send("Aja sendiri")
 
     kena_mute = await check_spam(message)
     if kena_mute:
         return 
-<<<<<<< HEAD
-=======
-    kena_mute = await check_spam(message)
-    if kena_mute:
-        return  
-
-=======
->>>>>>> 1f09e3a (prepareotomatisasi)
     user = await db.get_user(message.guild.id, message.author.id)
     now = int(time.time())
 
@@ -309,14 +244,7 @@ async def on_message(message: discord.Message):
 
         if result["leveled_up"]:
             embed = discord.Embed(
-<<<<<<< HEAD
-
                 description=f"🎉 Anjay {message.author.mention}, lu naik ke **Level {result['new_level']}**!",
-                description=f"🎉 Selamat {message.author.mention}, kamu naik ke **Level {result['new_level']}**!",
-                (Commit pertama file tertentu)
-=======
-                description=f"🎉 Anjay {message.author.mention}, lu naik ke **Level {result['new_level']}**!",
->>>>>>> 1f09e3a (prepareotomatisasi)
                 color=discord.Color.green(),
             )
             await message.channel.send(embed=embed)
@@ -324,14 +252,7 @@ async def on_message(message: discord.Message):
             role_baru = await give_level_roles(message.author, result["new_level"])
             if role_baru:
                 await message.channel.send(
-<<<<<<< HEAD
-
                     f"🎁 {message.author.mention} Nih gw kasih role: **{', '.join(role_baru)}**"
-                )
-                    f"🎁 {message.author.mention} mendapatkan role: **{', '.join(role_baru)}**"
-=======
-                    f"🎁 {message.author.mention} Nih gw kasih role: **{', '.join(role_baru)}**"
->>>>>>> 1f09e3a (prepareotomatisasi)
                 )
 
     await bot.process_commands(message)
@@ -352,15 +273,7 @@ async def dadu(ctx):
 async def join(ctx):
     """Panggil bot masuk ke voice channel yang sedang kamu tempati. Contoh: !join"""
     if ctx.author.voice is None or ctx.author.voice.channel is None:
-<<<<<<< HEAD
-<<<<<<< HEAD
         await ctx.send("Lumasuk dulu kocak.")
-=======
-        await ctx.send("Kamu harus masuk ke voice channel dulu sebelum memanggil bot.")
->>>>>>> 45a2f61 (Commit pertama file tertentu)
-=======
-        await ctx.send("Lumasuk dulu kocak.")
->>>>>>> 1f09e3a (prepareotomatisasi)
         return
  
     channel = ctx.author.voice.channel
@@ -444,15 +357,7 @@ async def leaderboard(ctx, jumlah: int = 10):
     await ctx.send(embed=embed)
 
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 ADMIN_ROLE_NAME = 1411476274224042115 
-=======
-ADMIN_ROLE_NAME = 1411476274224042115  # ganti dengan nama role kamu (harus persis sama, case-sensitive)
->>>>>>> 45a2f61 (Commit pertama file tertentu)
-=======
-ADMIN_ROLE_NAME = 1411476274224042115 
->>>>>>> 1f09e3a (prepareotomatisasi)
 
 
 @bot.command()
@@ -504,10 +409,6 @@ async def addxp_error(ctx, error):
     elif isinstance(error, commands.BadArgument):
         await ctx.send("Taro angka nyak. Contoh: `!addxp @nama 50`")
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 1f09e3a (prepareotomatisasi)
 @bot.command()
 async def ipul(ctx, *, pertanyaan):
     try:
@@ -524,11 +425,6 @@ async def ipul(ctx, *, pertanyaan):
     except Exception as e:
         print(f"[AI ERROR] {type(e).__name__}: {e}")
         await ctx.send("Ai error, bntr dah")
-<<<<<<< HEAD
-=======
->>>>>>> 45a2f61 (Commit pertama file tertentu)
-=======
->>>>>>> 1f09e3a (prepareotomatisasi)
 
 # Jalankan bot
 if TOKEN is None:
