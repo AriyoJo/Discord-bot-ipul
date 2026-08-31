@@ -5,7 +5,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 # Load .env di sini juga, supaya tidak tergantung urutan import di main.py/test_db.py
 load_dotenv()
 
-# Ambil connection string dari .env (jangan hardcode di sini, apalagi username/password)
+load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
 if not MONGO_URI:
     raise RuntimeError(

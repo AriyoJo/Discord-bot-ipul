@@ -1,0 +1,22 @@
+# Environment / secrets
+.env
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Database lokal
+*.db
+
+# Archive / backup
+*.zip
+
+# Backup source files
+* - Copy.py
+
+# Virtual environment
+venv/
+.venv/
+
+Discord-bot-ipul/
