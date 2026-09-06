@@ -274,7 +274,7 @@ async def dadu(ctx):
 
 
 @bot.command()
-async def join(ctx):
+async def sini(ctx):
     """Panggil bot masuk ke voice channel yang sedang kamu tempati. Contoh: !join"""
     if ctx.author.voice is None or ctx.author.voice.channel is None:
         await ctx.send("Lumasuk dulu kocak.")
