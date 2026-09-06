@@ -12,6 +12,7 @@ from threading import Thread
 from google import genai
 import database as db
 import tiktok_watcher
+import time
 
 load_dotenv()
 
@@ -458,6 +459,47 @@ async def voice_xp():
                         member,
                         result["new_level"]
                     )
+
+@bot.command()
+async def status(ctx):
+    gateway_latency = round(bot.latency * 1000)
+
+    rest_start = time.perf_counter()
+    msg = await ctx.send("Sabar ngecek cik")
+    rest_latency = round((time.perf_counter() - rest_start) * 1000)
+
+    db_start = time.perf_counter()
+    await db.db.command("ping")
+    db_latency = round((time.perf_counter() - db_start) * 1000)
+
+    embed = discord.Embed(
+        title="Bot Status",
+        color=discord.Color.green()
+    )
+
+    embed.add_field(
+        name="Discord Gateway",
+        value=f"`{gateway_latency} ms`",
+        inline=False
+    )
+
+    embed.add_field(
+        name="Discord REST",
+        value=f"`{rest_latency} ms`",
+        inline=False
+    )
+
+    embed.add_field(
+        name="Database",
+        value=f"`{db_latency} ms`",
+        inline=False
+    )
+
+    await msg.edit(
+        content=None,
+        embed=embed
+    )
+
 
 # Jalankan bot
 if TOKEN is None:
