@@ -262,7 +262,7 @@ async def on_message(message: discord.Message):
 
 
 @bot.command()
-async def ping(ctx):
+async def pul(ctx):
     await ctx.send("Nape?")
 
 
@@ -335,7 +335,7 @@ async def rank(ctx, member: discord.Member = None):
 
 
 @bot.command()
-async def leaderboard(ctx, jumlah: int = 10):
+async def yapping(ctx, jumlah: int = 10):
     """Lihat papan peringkat level server ini. Contoh: !leaderboard 15"""
     jumlah = min(jumlah, 25)
     rows = await db.get_leaderboard(ctx.guild.id, jumlah)
@@ -428,6 +428,36 @@ async def ipul(ctx, *, pertanyaan):
     except Exception as e:
         print(f"[AI ERROR] {type(e).__name__}: {e}")
         await ctx.send("Ai error, bntr dah")
+
+@tasks.loop(minutes=5)
+async def voice_xp():
+    for guild in bot.guilds:
+        for channel in guild.voice_channels:
+            members = [m for m in channel.members if not m.bot]
+
+            if len(members) < 2:
+                continue
+
+            for member in members:
+
+                if member.voice and member.voice.self_deaf:
+                    continue
+                
+                xp_gain = random.randint(3, 7)
+                now = int(time.time())
+
+                result = await db.add_xp(
+                    guild.id,
+                    member.id,
+                    xp_gain,
+                    now
+                )
+
+                if result["leveled_up"]:
+                    await give_level_roles(
+                        member,
+                        result["new_level"]
+                    )
 
 # Jalankan bot
 if TOKEN is None:
