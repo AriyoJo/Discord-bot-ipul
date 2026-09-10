@@ -235,6 +235,12 @@ async def on_message(message: discord.Message):
 
     if message.content.lower().strip() == "mole":
         await message.channel.send("Aja Sendiri")
+    
+    if message.content.lower().strip() == "valo":
+        await message.channel.send("Aja Sendiri")
+
+    if message.content.lower().strip() == "login":
+        await message.channel.send("Aja Sendiri")
 
     kena_mute = await check_spam(message)
     if kena_mute:
