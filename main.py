@@ -959,6 +959,20 @@ async def giveaway_error(ctx, error):
             f"{type(error).__name__}: {error}"
         )
 
+@bot.hybrid_command(
+    name="servers",
+    description="Melihat server yang dimasuki bot"
+)
+async def servers(ctx):
+    daftar = "\n".join(
+        f"{guild.name} | `{guild.id}`"
+        for guild in bot.guilds
+    )
+
+    await ctx.send(
+        f"Bot ada di {len(bot.guilds)} server:\n{daftar}"
+    )
+
 # Jalankan bot
 if TOKEN is None:
     raise RuntimeError(
