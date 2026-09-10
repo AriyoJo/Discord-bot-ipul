@@ -13,6 +13,7 @@ from google import genai
 import database as db
 import tiktok_watcher
 import time
+import asyncio
 
 load_dotenv()
 
@@ -161,6 +162,12 @@ async def check_spam(message: discord.Message) -> bool:
 @bot.event
 async def on_ready():
     print(f"Bot berhasil login sebagai {bot.user}")
+
+    try:
+        synced = await bot.tree.sync()
+        print(f"✅ Slash command synced: {len(synced)}")
+    except Exception as e:
+        print(f"❌ Slash command sync gagal: {e}") 
 
     try:
         await db.client.admin.command('ping')
@@ -506,6 +513,451 @@ async def status(ctx):
         embed=embed
     )
 
+# =========================================================
+# GIVEAWAY SYSTEM
+# =========================================================
+
+
+def parse_duration(value: str):
+    """
+    Mengubah input durasi menjadi detik.
+
+    Contoh:
+    30s -> 30 detik
+    10m -> 600 detik
+    2h  -> 7200 detik
+    1d  -> 86400 detik
+    """
+
+    value = value.lower().strip()
+
+    if len(value) < 2:
+        return None
+
+    angka = value[:-1]
+    satuan = value[-1]
+
+    if not angka.isdigit():
+        return None
+
+    angka = int(angka)
+
+    if angka <= 0:
+        return None
+
+    if satuan == "s":
+        return angka
+
+    if satuan == "m":
+        return angka * 60
+
+    if satuan == "h":
+        return angka * 60 * 60
+
+    if satuan == "d":
+        return angka * 60 * 60 * 24
+
+    return None
+
+
+async def ask_question(ctx, pertanyaan: str, timeout=120):
+    """
+    Bot mengirim pertanyaan lalu menunggu jawaban
+    dari operator yang sama dan channel yang sama.
+    """
+
+    await ctx.send(pertanyaan)
+
+    def check(message):
+        return (
+            message.author.id == ctx.author.id
+            and message.channel.id == ctx.channel.id
+            and not message.author.bot
+        )
+
+    try:
+        message = await bot.wait_for(
+            "message",
+            check=check,
+            timeout=timeout
+        )
+
+        return message.content.strip()
+
+    except asyncio.TimeoutError:
+        return None
+
+class GiveawayView(discord.ui.View):
+    def __init__(self, required_role=None):
+        super().__init__(timeout=None)
+
+        self.required_role = required_role
+        self.entries = set()
+
+    @discord.ui.button(
+        label="Join Giveaway",
+        style=discord.ButtonStyle.success,
+        emoji="🎉"
+    )
+    async def join_giveaway(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+        member = interaction.user
+
+        # Kalau ada requirement role
+        if self.required_role is not None:
+            if self.required_role not in member.roles:
+                await interaction.response.send_message(
+                    "❌ Kamu tidak memiliki requirement untuk giveaway ini.",
+                    ephemeral=True
+                )
+                return
+
+        # Kalau user sudah join
+        if member.id in self.entries:
+            await interaction.response.send_message(
+                "⚠️ Kamu sudah ikut giveaway ini.",
+                ephemeral=True
+            )
+            return
+
+        # Masukkan user ke peserta
+        self.entries.add(member.id)
+
+        await interaction.response.send_message(
+            "✅ Kamu berhasil ikut giveaway!",
+            ephemeral=True
+        )
+
+giveaway_sessions = set()
+
+
+@bot.hybrid_command(
+    name="giveaway",
+    description="Membuat giveaway baru"
+)
+@commands.has_permissions(manage_messages=True)
+async def giveaway(ctx):
+
+    user_id = ctx.author.id
+
+    if user_id in giveaway_sessions:
+        await ctx.send(
+            "⚠️ Kamu masih punya setup giveaway yang sedang berjalan."
+        )
+        return
+
+    giveaway_sessions.add(user_id)
+
+    try:
+        hadiah = await ask_question(
+            ctx,
+            "🎁 **Hadiahnya apa tu?**\n"
+            "Contoh: `robak`"
+        )
+
+        if hadiah is None:
+            await ctx.send(
+                "⏰ kebanyakan mikir"
+            )
+            return
+
+        if hadiah.lower() == "cancel":
+            await ctx.send("❌ Giveaway dibatalkan.")
+            return
+
+    finally:
+        giveaway_sessions.discard(user_id)
+
+    while True:
+
+        durasi_input = await ask_question(
+            ctx,
+            "⏱️ **Lama ga?**\n\n"
+            "Contoh:\n"
+            "`30s` = 30 detik\n"
+            "`10m` = 10 menit\n"
+            "`2h` = 2 jam\n"
+            "`1d` = 1 hari"
+        )
+
+        if durasi_input is None:
+            await ctx.send(
+                "⏰ Gada yg dateng jir"
+            )
+            return
+
+        if durasi_input.lower() == "cancel":
+            await ctx.send("❌ Keciwir.")
+            return
+
+        durasi_detik = parse_duration(durasi_input)
+
+        if durasi_detik is not None:
+            break
+
+        await ctx.send(
+            "❌ **Diliat bloon**\n"
+            "Contoh: `10m`, `2h`, `30s`, atau `1d`."
+        )
+
+    while True:
+
+        winner_input = await ask_question(
+            ctx,
+            "🏆 **Berapa yg menang kira kira**\n"
+            "Contoh: `1`"
+        )
+
+        if winner_input is None:
+            await ctx.send(
+                "⏰ kebanyakan mikir"
+            )
+            return
+
+        if winner_input.lower() == "cancel":
+            await ctx.send("❌ Giveaway dibatalkan.")
+            return
+
+        if winner_input.isdigit():
+
+            jumlah_pemenang = int(winner_input)
+
+            if jumlah_pemenang > 0:
+                break
+
+        await ctx.send(
+            "❌ Yg bener masukinya kocak\n"
+            "Contoh: `1`, `2`, atau `3`."
+        )
+        
+    while True:
+        requirement_input = await ask_question(
+            ctx,
+            "📋 **Pake role ga?**\n\n"
+            "Mau role apa?\n"
+            "Contoh: `@Ertege`\n\n"
+            "Ketik `-` jika tidak ada requirement."
+        )
+
+        if requirement_input is None:
+            await ctx.send(
+                "⏰ Kebanyakan Mikir"
+            )
+            return
+
+        if requirement_input.lower() == "cancel":
+            await ctx.send("❌ Giveaway dibatalkan.")
+            return
+
+        if requirement_input == "-":
+            required_role = None
+            requirement_text = "None"
+            break
+
+
+        if requirement_input.startswith("<@&") and requirement_input.endswith(">"):
+            try:
+                role_id = int(
+                    requirement_input
+                    .replace("<@&", "")
+                    .replace(">", "")
+                )
+
+                required_role = ctx.guild.get_role(role_id)
+
+                if required_role is not None:
+                    requirement_text = required_role.mention
+                    break
+
+            except ValueError:
+                pass
+
+        await ctx.send(
+            "❌ **Role Gada jing**\n"
+            "Mention role Discord, contoh `@Atmin`, "
+            "atau ketik `-` jika tidak ada restriction."
+        )
+
+
+    preview = discord.Embed(
+        title="🎉 Giveaway Preview",
+        description=(
+            f"## 🎁 {hadiah}\n\n"
+            f"**Duration:** {durasi_input}\n"
+            f"**Winners:** {jumlah_pemenang}\n"
+            f"**Requirement:** {requirement_text}"
+        ),
+        color=discord.Color.gold()
+    )
+
+    await ctx.send(embed=preview)
+
+    konfirmasi = await ask_question(
+        ctx,
+        "✅ **Buat giveaway ini?**\n"
+        "Ketik `yes` untuk membuat atau `no` untuk membatalkan."
+    )
+
+    if konfirmasi is None:
+        await ctx.send(
+            "⏰ Setup giveaway dibatalkan."
+        )
+        return
+
+    if konfirmasi.lower() not in ["yes", "y", "ya"]:
+        await ctx.send("❌ Giveaway dibatalkan.")
+        return
+
+    end_timestamp = int(time.time()) + durasi_detik
+
+    giveaway_embed = discord.Embed(
+        description=(
+            "# 🎉 Giveaway\n\n"
+            f"## {hadiah}\n\n"
+            "Klik tombol **Join Giveaway** untuk ikut!\n\n"
+            f"**Host:** {ctx.author.mention}\n"
+            f"**Winners:** {jumlah_pemenang}\n"
+            f"**Requirement:** {requirement_text}\n"
+            f"**Ends:** <t:{end_timestamp}:R>"
+        ),
+        color=discord.Color.gold()
+    )
+
+    view = GiveawayView(
+        required_role=required_role
+    )
+
+    giveaway_message = await ctx.send(
+        embed=giveaway_embed,
+        view=view
+    )
+
+    giveaway_id = giveaway_message.id
+
+
+    giveaway_embed.description = (
+        "# 🎉 Giveaway\n\n"
+        f"## {hadiah}\n\n"
+        "Klik tombol **Join Giveaway** untuk ikut!\n\n"
+        f"**Host:** {ctx.author.mention}\n"
+        f"**Winners:** {jumlah_pemenang}\n"
+        f"**Giveaway ID:** `{giveaway_id}`\n"
+        f"**Requirement:** {requirement_text}\n"
+        f"**Ends:** <t:{end_timestamp}:R>"
+    )
+
+    await giveaway_message.edit(
+        embed=giveaway_embed,
+        view=view
+    )
+
+    await asyncio.sleep(durasi_detik)
+
+    try:
+        giveaway_message = await ctx.channel.fetch_message(
+            giveaway_id
+        )
+    except discord.NotFound:
+        return
+
+    peserta = []
+
+    for user_id in view.entries:
+
+        member = ctx.guild.get_member(user_id)
+
+        if member is not None:
+            peserta.append(member)
+
+    jumlah_entries = len(peserta)
+
+    if jumlah_entries == 0:
+
+        winners_text = "No winner."
+
+    else:
+
+        jumlah_final = min(
+            jumlah_pemenang,
+            jumlah_entries
+        )
+
+        winners = random.sample(
+            peserta,
+            jumlah_final
+        )
+
+        winners_text = "\n".join(
+            winner.mention
+            for winner in winners
+        )
+
+    ended_timestamp = int(time.time())
+
+    ended_embed = discord.Embed(
+        description=(
+            "# 🎉 Giveaway\n\n"
+            f"## {hadiah}\n\n"
+            "This giveaway has ended.\n\n"
+            f"**Host:** {ctx.author.mention}\n"
+            f"**Winners:** {jumlah_pemenang}\n"
+            f"**Entries:** {jumlah_entries}\n"
+            f"**Giveaway ID:** `{giveaway_id}`\n"
+            f"**Requirement:** {requirement_text}\n"
+            f"**Ended:** <t:{ended_timestamp}:R>\n\n"
+            "## Winners\n"
+            f"{winners_text}"
+        ),
+        color=discord.Color.dark_grey()   
+    )
+
+    for item in view.children:
+        item.disabled = True
+
+    await giveaway_message.edit(
+        embed=ended_embed,
+        view=view
+    )
+
+    if jumlah_entries > 0:
+
+        await ctx.send(
+            f"🎉 **Giveaway {hadiah} selesai!**\n\n"
+            f"🏆 Winner:\n{winners_text}"
+        )
+
+    else:
+
+        await ctx.send(
+            f"Giveaway **{hadiah}** selesai, "
+            "sedih ngafs gada yg ikut."
+        )
+
+
+
+
+@giveaway.error
+async def giveaway_error(ctx, error):
+
+    if isinstance(
+        error,
+        commands.MissingPermissions
+    ):
+
+        await ctx.send(
+            "❌ Mampus gabisa bikin "
+            "**Manage Messages** untuk membuat giveaway."
+        )
+
+    else:
+
+        print(
+            f"[GIVEAWAY ERROR] "
+            f"{type(error).__name__}: {error}"
+        )
 
 # Jalankan bot
 if TOKEN is None:
