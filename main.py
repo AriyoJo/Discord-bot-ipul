@@ -1,7 +1,7 @@
 import os
 import time
 import random
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import timedelta
 import aiohttp
 import discord
@@ -59,7 +59,16 @@ SPAM_MUTE_DURATION_MINUTES = 10
 # ====== KONFIGURASI NOTIFIKASI TIKTOK ======
 TIKTOK_USERNAME = "poiloristo"    
 TIKTOK_NOTIFY_CHANNEL_ID = 1537375115149578252   
-TIKTOK_CHECK_INTERVAL_MINUTES = 15                 
+TIKTOK_CHECK_INTERVAL_MINUTES = 15
+
+# ====== IMAGE SPAM ======
+IMAGE_SPAM_LIMIT = 3
+IMAGE_SPAM_WINDOW_SECONDS = 30
+
+IMAGE_TIMEOUT_MIN_MINUTES = 10
+IMAGE_TIMEOUT_MAX_MINUTES = 60
+
+image_spam_tracker = defaultdict(deque)
 
 
 LEVEL_ROLES = {
@@ -235,6 +244,16 @@ async def before_check_tiktok():
 async def on_message(message: discord.Message):
     if message.author.bot or message.guild is None:
         await bot.process_commands(message)
+        return
+    
+    kena_image_spam = await check_image_spam(message)
+
+    if kena_image_spam:
+        return
+    
+    kena_mute = await check_spam(message)
+
+    if kena_mute:
         return
 
     if message.mention_everyone and "@everyone" in message.content:
@@ -972,11 +991,77 @@ async def servers(ctx):
     await ctx.send(
         f"Bot ada di {len(bot.guilds)} server:\n{daftar}"
     )
+    
+async def check_image_spam(message: discord.Message) -> bool:
+    if message.guild is None:
+        return False
+    
+    if message.author.bot:
+        return False
+
+    images = [
+        attachment
+        for attachment in message.attachments
+        if attachment.content_type
+        and attachment.content_type.startswith("image/")
+    ]
+
+    if not images:
+        return False
+    
+    key = (
+        message.guild.id,
+        message.author.id
+    )
+
+    now = time.time()
+
+    timetamps = image_spam_tracker[key]
+
+    while (
+        timetamps
+        and now - timetamps[0] > IMAGE_SPAM_WINDOW_SECONDS
+    ):
+        timetamps.popleft()
+    
+    for _ in images:
+        timetamps.append(now)
+
+    if len(timetamps) <= IMAGE_SPAM_LIMIT:
+        return False
+    
+    timeout_minutes = random.randint(
+        IMAGE_TIMEOUT_MIN_MINUTES,
+        IMAGE_TIMEOUT_MAX_MINUTES
+    )
+
+    try:
+        await message.author.timeout(
+            timedelta(minutes=timeout_minutes),
+            reason="Image spam"
+        )
+
+        await message.channel.send(
+            f"🔇 {message.author.mention} timeout"
+            f"**{timeout_minutes} menit ** spam gambar"
+        )
+
+        timetamps.clear()
+
+        return True
+    
+    except discord.Forbidden:
+        await message.channel.send(
+            f"{message.author.mention} jan spam woi,"
+            "gw gapunya permission buat timeout"
+        )
+
+        timetamps.clear()
+        return False 
 
 # Jalankan bot
 if TOKEN is None:
     raise RuntimeError(
         "DISCORD_TOKEN tidak ditemukan. Pastikan file .env ada dan berisi DISCORD_TOKEN=token_kamu"
     )
-
 bot.run(TOKEN)
