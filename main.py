@@ -445,22 +445,36 @@ async def addxp_error(ctx, error):
     elif isinstance(error, commands.BadArgument):
         await ctx.send("Taro angka nyak. Contoh: `!addxp @nama 50`")
 
+        
+
 @bot.command()
 async def ipul(ctx, *, pertanyaan):
-    try:
-        response = client.models.generate_content(
-            model="gemini-3.6-flash",
-            contents=pertanyaan
-    )
+    async with ctx.typing():
+        # Daftar model cadangan jika model utama overload (503)
+        models_to_try = ["gemini-3.8-flash", "gemini-3.7-flash","gemini-3.6-flash","gemini-3.5-flash-lite","gemini-3.1-flash-lite"]
+        
+        response = None
+        last_error = None
+ 
+        for model_name in models_to_try:
+            try:
+                response = await client.aio.models.generate_content(
+                    model=model_name,
+                    contents=pertanyaan
+                )
+                if response:
+                    break  # Berhasil dapat respon, keluar dari loop
+            except Exception as e:
+                last_error = e
+                print(f"[AI RETRY] Gagal di model {model_name}, mencoba model lain... Error: {e}")
 
-        jawaban = response.text
-
-        for i in range(0, len(jawaban), 1900):
-            await ctx.send(jawaban[i:i+1900])
-
-    except Exception as e:
-        print(f"[AI ERROR] {type(e).__name__}: {e}")
-        await ctx.send("Ai error, bntr dah")
+        if response and response.text:
+            jawaban = response.text
+            for i in range(0, len(jawaban), 1900):
+                await ctx.send(jawaban[i:i+1900])
+        else:
+            print(f"[AI ERROR FINAL] {last_error}")
+            await ctx.send("Server Gemini lagi padat banget, coba beberapa saat lagi ya.")
 
 @tasks.loop(minutes=5)
 async def voice_xp():
