@@ -367,10 +367,14 @@ async def rank(ctx, member: discord.Member = None):
     await ctx.send(embed=embed)
 
 
-@bot.command()
-async def yapping(ctx, jumlah: int = 10):
-    """Lihat papan peringkat level server ini. Contoh: !leaderboard 15"""
-    jumlah = min(jumlah, 25)
+@bot.hybrid_command(
+    name="leaderboard",
+    description="Melihat Leaderboard"
+)
+@commands.has_permissions(manage_messages=True)
+async def leaderboard(ctx):
+    jumlah = 10
+
     rows = await db.get_leaderboard(ctx.guild.id, jumlah)
 
     if not rows:
@@ -379,17 +383,22 @@ async def yapping(ctx, jumlah: int = 10):
 
     medali = ["🥇", "🥈", "🥉"]
     lines = []
+
     for i, row in enumerate(rows):
         label = medali[i] if i < 3 else f"**{i + 1}.**"
         member = ctx.guild.get_member(int(row["user_id"]))
         nama = member.display_name if member else f"Pengguna ({row['user_id']})"
-        lines.append(f"{label} {nama} — Level {row['level']} ({row['xp']} XP)")
+
+        lines.append(
+            f"{label} {nama} — Level {row['level']} ({row['xp']} XP)"
+        )
 
     embed = discord.Embed(
         title=f"🏆 Papan Yapping — {ctx.guild.name}",
         description="\n".join(lines),
         color=discord.Color.gold(),
     )
+
     await ctx.send(embed=embed)
 
 
@@ -446,8 +455,10 @@ async def addxp_error(ctx, error):
         await ctx.send("Taro angka nyak. Contoh: `!addxp @nama 50`")
 
         
-
-@bot.command()
+@bot.hybrid_command(
+    name="ipul",
+    description="Nanya sesuatu"
+)
 async def ipul(ctx, *, pertanyaan):
     async with ctx.typing():
         # Daftar model cadangan jika model utama overload (503)
