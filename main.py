@@ -188,7 +188,7 @@ async def on_ready():
         check_tiktok.start()
 
     if not check_tempbans.is_running():
-    check_tempbans.start()
+        check_tempbans.start()
 
 
 
@@ -1405,7 +1405,7 @@ async def check_tempbans():
 @check_tempbans.before_loop
 async def before_check_tempbans():
     await bot.wait_until_ready()
-    
+
 
 # Jalankan bot
 if TOKEN is None:
