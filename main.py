@@ -1133,6 +1133,10 @@ async def on_member_remove(member):
         color=discord.Color.red()
     )
 
+    if (member.guild.id, member.id) in silent_removals:
+        silent_removals.discard((member.guild.id, member.id))
+        return
+
     embed.set_thumbnail(url=member.display_avatar.url)
 
     await channel.send(embed=embed)
@@ -1258,13 +1262,13 @@ async def _mod_wizard(ctx, action: str):
     while True:
         reason = await tanya(
             ctx,
-            "📝 **Alasannya apa?**\n"
-            "Alasan ini akan dikirim ke DM member yang bersangkutan."
+            "📝 **Alasannya apa wok?**\n"
+            "Alasennya apa wok"
         )
         if reason is None:
             return
         if len(reason) > 400:
-            await ctx.send("❌ Kepanjangan, maksimal 400 karakter.")
+            await ctx.send("Kepanjangan kids")
             continue
         break
 
@@ -1406,6 +1410,164 @@ async def check_tempbans():
 async def before_check_tempbans():
     await bot.wait_until_ready()
 
+
+from types import SimpleNamespace
+from discord import app_commands
+
+silent_removals = set()
+
+
+class SenyapModal(discord.ui.Modal):
+    def __init__(self, action: str, target: discord.Member):
+        emoji, label, _ = MOD_INFO[action]
+        super().__init__(title=f"{label} senyap: {target.display_name}"[:45])
+        self.action = action
+        self.target = target
+
+        self.durasi = None
+        if action == "mute":
+            self.durasi = discord.ui.TextInput(
+                label="Durasi (contoh: 10m, 2h, 1d)",
+                required=True,
+                max_length=10,
+            )
+            self.add_item(self.durasi)
+        elif action == "ban":
+            self.durasi = discord.ui.TextInput(
+                label="Durasi: 10m/2h/1d, kosong = permanen",
+                required=False,
+                max_length=10,
+            )
+            self.add_item(self.durasi)
+
+        self.reason = discord.ui.TextInput(
+            label="Alasan (hanya masuk audit log)",
+            style=discord.TextStyle.paragraph,
+            required=False,
+            max_length=400,
+        )
+        self.add_item(self.reason)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        guild = interaction.guild
+        action = self.action
+        target = self.target
+        emoji, label, _ = MOD_INFO[action]
+
+        # Validasi durasi
+        durasi_detik = None
+        if self.durasi is not None and self.durasi.value.strip():
+            durasi_detik = parse_duration(self.durasi.value)
+            if durasi_detik is None:
+                await interaction.response.send_message(
+                    "❌ Format durasi salah. Contoh: `10m`, `2h`, `1d`.", ephemeral=True
+                )
+                return
+            if action == "mute" and durasi_detik > MAX_TIMEOUT_SECONDS:
+                await interaction.response.send_message(
+                    "❌ Mute (timeout) maksimal **28 hari**.", ephemeral=True
+                )
+                return
+
+        # Cek hierarki lagi (role bisa berubah sejak command dipanggil)
+        fake_ctx = SimpleNamespace(author=interaction.user, guild=guild)
+        masalah = cek_hierarki(fake_ctx, target)
+        if masalah:
+            await interaction.response.send_message(f"❌ {masalah}", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        alasan = self.reason.value.strip() or "Tanpa alasan"
+        audit_reason = f"[SENYAP] {interaction.user} ({interaction.user.id}): {alasan}"[:512]
+
+        key = (guild.id, target.id)
+        try:
+            if action == "kick":
+                silent_removals.add(key)
+                await target.kick(reason=audit_reason)
+
+            elif action == "ban":
+                silent_removals.add(key)
+                await guild.ban(target, reason=audit_reason, delete_message_seconds=0)
+                if durasi_detik:
+                    await db.db["tempbans"].update_one(
+                        {"guild_id": guild.id, "user_id": target.id},
+                        {"$set": {"unban_at": int(time.time()) + durasi_detik}},
+                        upsert=True,
+                    )
+
+            elif action == "mute":
+                await target.timeout(timedelta(seconds=durasi_detik), reason=audit_reason)
+
+        except discord.Forbidden:
+            silent_removals.discard(key)
+            await interaction.followup.send(
+                "❌ Bot tidak punya izin / posisi role bot kurang tinggi.", ephemeral=True
+            )
+            return
+        except discord.HTTPException as e:
+            silent_removals.discard(key)
+            await interaction.followup.send(f"❌ Gagal: {e}", ephemeral=True)
+            return
+
+        durasi_text = ""
+        if durasi_detik:
+            durasi_text = f" selama **{format_durasi(durasi_detik)}**"
+        elif action == "ban":
+            durasi_text = " **permanen**"
+
+        await interaction.followup.send(
+            f"{emoji} Senyap: **{target}** terkena **{label}**{durasi_text}. "
+            "Tidak ada DM dan tidak ada pengumuman.",
+            ephemeral=True,
+        )
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        print(f"[SENYAP ERROR] {type(error).__name__}: {error}")
+        if not interaction.response.is_done():
+            await interaction.response.send_message("❌ Terjadi error.", ephemeral=True)
+        else:
+            await interaction.followup.send("❌ Terjadi error.", ephemeral=True)
+
+
+@bot.tree.command(
+    name="senyap",
+    description="Kick/ban/mute diam-diam (tanpa DM, tanpa pengumuman)"
+)
+@app_commands.describe(aksi="Jenis tindakan", target="Member yang dituju")
+@app_commands.choices(aksi=[
+    app_commands.Choice(name="Kick", value="kick"),
+    app_commands.Choice(name="Ban", value="ban"),
+    app_commands.Choice(name="Mute", value="mute"),
+])
+@app_commands.guild_only()
+async def senyap(
+    interaction: discord.Interaction,
+    aksi: app_commands.Choice[str],
+    target: discord.Member,
+):
+    action = aksi.value
+    _, _, perm = MOD_INFO[action]
+
+    if not getattr(interaction.user.guild_permissions, perm):
+        await interaction.response.send_message(
+            f"❌ Lu butuh permission **{perm}**.", ephemeral=True
+        )
+        return
+    if not getattr(interaction.guild.me.guild_permissions, perm):
+        await interaction.response.send_message(
+            f"❌ Bot belum punya permission **{perm}**.", ephemeral=True
+        )
+        return
+
+    fake_ctx = SimpleNamespace(author=interaction.user, guild=interaction.guild)
+    masalah = cek_hierarki(fake_ctx, target)
+    if masalah:
+        await interaction.response.send_message(f"❌ {masalah}", ephemeral=True)
+        return
+
+    await interaction.response.send_modal(SenyapModal(action, target))
 
 # Jalankan bot
 if TOKEN is None:
