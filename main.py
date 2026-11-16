@@ -10,6 +10,8 @@ from dotenv import load_dotenv
 from flask import Flask
 from threading import Thread
 from google import genai
+from types import SimpleNamespace
+from discord import app_commands
 import database as db
 import tiktok_watcher
 import time
@@ -1150,7 +1152,14 @@ MOD_INFO = {
 }
 
 MAX_TIMEOUT_SECONDS = 28 * 24 * 60 * 60  # batas timeout Discord: 28 hari
-mod_sessions = set()
+
+# Batasi /moderasi ke role tertentu. Contoh: [1411476274224042115]
+# Kosong [] = siapa pun yang punya permission Discord-nya boleh pakai.
+MODERASI_ALLOWED_ROLE_IDS = [1411476274224042115]
+
+# Korban kick/ban dicatat di sini supaya pesan "member keluar"
+# di on_member_remove tidak ikut muncul (lihat edit di paling bawah).
+silent_removals = set()
 
 
 def format_durasi(detik: int) -> str:
@@ -1177,252 +1186,13 @@ def cek_hierarki(ctx, target: discord.Member):
     return None
 
 
-async def tanya(ctx, pertanyaan: str):
-    """Bungkus ask_question: return None kalau timeout atau user ketik 'cancel'."""
-    jawab = await ask_question(ctx, pertanyaan)
-    if jawab is None:
-        await ctx.send("⏰ Kelamaan, setup dibatalkan.")
-        return None
-    if jawab.lower() == "cancel":
-        await ctx.send("❌ Dibatalkan.")
-        return None
-    return jawab
-
-
-async def run_mod_wizard(ctx, action: str):
-    emoji, label, perm = MOD_INFO[action]
-
-    if not getattr(ctx.author.guild_permissions, perm):
-        await ctx.send(f"❌ Lu butuh permission **{perm}** buat ini.")
-        return
-    if not getattr(ctx.guild.me.guild_permissions, perm):
-        await ctx.send(f"❌ Bot belum punya permission **{perm}**.")
-        return
-
-    if ctx.author.id in mod_sessions:
-        await ctx.send("⚠️ Lu masih punya setup moderasi yang berjalan.")
-        return
-
-    mod_sessions.add(ctx.author.id)
-    try:
-        await _mod_wizard(ctx, action)
-    finally:
-        mod_sessions.discard(ctx.author.id)
-
-
-async def _mod_wizard(ctx, action: str):
-    emoji, label, _ = MOD_INFO[action]
-
-    # 1) Siapa targetnya
-    while True:
-        jawab = await tanya(
-            ctx,
-            f"{emoji} **Siapa yang mau di-{label.lower()}?**\n"
-            "Mention atau ketik ID-nya. Ketik `cancel` untuk batal."
-        )
-        if jawab is None:
-            return
-        try:
-            target = await commands.MemberConverter().convert(ctx, jawab)
-        except commands.BadArgument:
-            await ctx.send("❌ Member nggak ketemu. Coba mention atau pakai ID.")
-            continue
-
-        masalah = cek_hierarki(ctx, target)
-        if masalah:
-            await ctx.send(f"❌ {masalah}")
-            continue
-        break
-
-    # 2) Durasi (hanya ban & mute)
-    durasi_detik = None
-    if action in ("ban", "mute"):
-        petunjuk = "`30m`, `2h`, `1d`"
-        if action == "ban":
-            petunjuk += ", atau `-` untuk permanen"
-
-        while True:
-            jawab = await tanya(ctx, f"⏱️ **Berapa lama?**\nContoh: {petunjuk}")
-            if jawab is None:
-                return
-            if action == "ban" and jawab == "-":
-                break
-
-            detik = parse_duration(jawab)
-            if detik is None:
-                await ctx.send("❌ Format salah. Contoh: `10m`, `2h`, `1d`.")
-                continue
-            if action == "mute" and detik > MAX_TIMEOUT_SECONDS:
-                await ctx.send("❌ Mute (timeout) maksimal **28 hari**.")
-                continue
-            durasi_detik = detik
-            break
-
-    # 3) Alasan (ini yang dikirim ke DM korban)
-    while True:
-        reason = await tanya(
-            ctx,
-            "📝 **Alasannya apa wok?**\n"
-            "Alasennya apa wok"
-        )
-        if reason is None:
-            return
-        if len(reason) > 400:
-            await ctx.send("Kepanjangan kids")
-            continue
-        break
-
-    # 4) Anonymous atau tidak
-    while True:
-        jawab = await tanya(
-            ctx,
-            "🕶️ **Anonymous?**\n"
-            "`ya` = nama moderator disembunyikan dari korban & pengumuman publik\n"
-            "`tidak` = nama moderator ditampilkan"
-        )
-        if jawab is None:
-            return
-        if jawab.lower() in ("ya", "y", "yes"):
-            anonim = True
-            break
-        if jawab.lower() in ("tidak", "t", "n", "no", "ga", "gak", "nggak"):
-            anonim = False
-            break
-        await ctx.send("❌ Jawab `ya` atau `tidak`.")
-
-    # 5) Preview + konfirmasi
-    durasi_text = (
-        format_durasi(durasi_detik) if durasi_detik
-        else ("Permanen" if action == "ban" else "-")
-    )
-    preview = discord.Embed(
-        title=f"{emoji} Konfirmasi {label}",
-        description=(
-            f"**Target:** {target.mention}\n"
-            f"**Durasi:** {durasi_text}\n"
-            f"**Alasan:** {reason}\n"
-            f"**Anonymous:** {'Ya' if anonim else 'Tidak'}"
-        ),
-        color=discord.Color.red(),
-    )
-    await ctx.send(embed=preview)
-
-    konfirmasi = await tanya(ctx, "✅ Ketik `yes` untuk eksekusi, atau `no` untuk batal.")
-    if konfirmasi is None:
-        return
-    if konfirmasi.lower() not in ("yes", "y", "ya"):
-        await ctx.send("❌ Dibatalkan.")
-        return
-
-    # 6) Kirim DM ke korban (sebelum kick/ban, supaya masih satu server)
-    dm_embed = discord.Embed(
-        title=f"{emoji} Kamu terkena {label} di {ctx.guild.name}",
-        color=discord.Color.red(),
-    )
-    dm_embed.add_field(name="Alasan", value=reason, inline=False)
-    if action != "kick":
-        dm_embed.add_field(name="Durasi", value=durasi_text, inline=False)
-    dm_embed.set_footer(
-        text="Dikirim oleh staf server" if anonim else f"Moderator: {ctx.author}"
-    )
-
-    dm_terkirim = True
-    try:
-        await target.send(embed=dm_embed)
-    except (discord.Forbidden, discord.HTTPException):
-        dm_terkirim = False  # DM korban tertutup
-
-    # 7) Eksekusi. Audit log Discord tetap mencatat moderator asli (hanya terlihat staf).
-    audit_reason = f"{ctx.author} ({ctx.author.id}): {reason}"[:512]
-
-    try:
-        if action == "kick":
-            await target.kick(reason=audit_reason)
-
-        elif action == "ban":
-            await ctx.guild.ban(target, reason=audit_reason, delete_message_seconds=0)
-            if durasi_detik:
-                await db.db["tempbans"].update_one(
-                    {"guild_id": ctx.guild.id, "user_id": target.id},
-                    {"$set": {"unban_at": int(time.time()) + durasi_detik}},
-                    upsert=True,
-                )
-
-        elif action == "mute":
-            await target.timeout(timedelta(seconds=durasi_detik), reason=audit_reason)
-
-    except discord.Forbidden:
-        await ctx.send("❌ Bot tidak punya izin / posisi role bot kurang tinggi. Aksi gagal.")
-        return
-    except discord.HTTPException as e:
-        await ctx.send(f"❌ Gagal: {e}")
-        return
-
-    # 8) Pengumuman publik (alasan tidak ditampilkan di sini)
-    teks = f"{emoji} {target.mention} terkena **{label}**"
-    if durasi_detik:
-        teks += f" selama **{format_durasi(durasi_detik)}**"
-    elif action == "ban":
-        teks += " **permanen**"
-    if not anonim:
-        teks += f" oleh {ctx.author.mention}"
-    if not dm_terkirim:
-        teks += "\n⚠️ DM korban tertutup, alasan tidak terkirim."
-    await ctx.send(teks)
-
-
-@bot.hybrid_command(name="kick", description="Kick member (bot akan bertanya detailnya)")
-@commands.guild_only()
-async def kick(ctx):
-    await run_mod_wizard(ctx, "kick")
-
-
-@bot.hybrid_command(name="ban", description="Ban member (bot akan bertanya detailnya)")
-@commands.guild_only()
-async def ban(ctx):
-    await run_mod_wizard(ctx, "ban")
-
-
-@bot.hybrid_command(name="mute", description="Mute/timeout member (bot akan bertanya detailnya)")
-@commands.guild_only()
-async def mute(ctx):
-    await run_mod_wizard(ctx, "mute")
-
-
-# ---------- Auto-unban untuk ban berdurasi ----------
-@tasks.loop(minutes=1)
-async def check_tempbans():
-    now = int(time.time())
-    async for doc in db.db["tempbans"].find({"unban_at": {"$lte": now}}):
-        guild = bot.get_guild(doc["guild_id"])
-        if guild is not None:
-            try:
-                await guild.unban(discord.Object(id=doc["user_id"]), reason="Tempban selesai")
-            except discord.NotFound:
-                pass  # sudah di-unban manual
-            except discord.Forbidden:
-                print(f"[TEMPBAN] Tidak bisa unban {doc['user_id']} di {guild.name} (izin kurang).")
-                continue
-        await db.db["tempbans"].delete_one({"_id": doc["_id"]})
-
-
-@check_tempbans.before_loop
-async def before_check_tempbans():
-    await bot.wait_until_ready()
-
-
-from types import SimpleNamespace
-from discord import app_commands
-
-silent_removals = set()
-
-
-class SenyapModal(discord.ui.Modal):
-    def __init__(self, action: str, target: discord.Member):
+class ModerasiModal(discord.ui.Modal):
+    def __init__(self, action: str, target: discord.Member, kirim_dm: bool = False):
         emoji, label, _ = MOD_INFO[action]
-        super().__init__(title=f"{label} senyap: {target.display_name}"[:45])
+        super().__init__(title=f"{label}: {target.display_name}"[:45])
         self.action = action
         self.target = target
+        self.kirim_dm = kirim_dm
 
         self.durasi = None
         if action == "mute":
@@ -1441,7 +1211,7 @@ class SenyapModal(discord.ui.Modal):
             self.add_item(self.durasi)
 
         self.reason = discord.ui.TextInput(
-            label="Alasan (hanya masuk audit log)",
+            label="Alasan",
             style=discord.TextStyle.paragraph,
             required=False,
             max_length=400,
@@ -1479,7 +1249,26 @@ class SenyapModal(discord.ui.Modal):
         await interaction.response.defer(ephemeral=True)
 
         alasan = self.reason.value.strip() or "Tanpa alasan"
-        audit_reason = f"[SENYAP] {interaction.user} ({interaction.user.id}): {alasan}"[:512]
+        audit_reason = f"[MODERASI] {interaction.user} ({interaction.user.id}): {alasan}"[:512]
+
+        # DM alasan ke korban (opsional, anonim: tanpa nama moderator)
+        dm_status = "tanpa DM"
+        if self.kirim_dm:
+            dm_embed = discord.Embed(
+                title=f"{emoji} Kamu terkena {label} di {guild.name}",
+                color=discord.Color.red(),
+            )
+            dm_embed.add_field(name="Alasan", value=alasan, inline=False)
+            if durasi_detik:
+                dm_embed.add_field(name="Durasi", value=format_durasi(durasi_detik), inline=False)
+            elif action == "ban":
+                dm_embed.add_field(name="Durasi", value="Permanen", inline=False)
+            dm_embed.set_footer(text="Dikirim oleh staf server")
+            try:
+                await target.send(embed=dm_embed)
+                dm_status = "alasan terkirim ke DM korban"
+            except (discord.Forbidden, discord.HTTPException):
+                dm_status = "DM korban tertutup, alasan tidak terkirim"
 
         key = (guild.id, target.id)
         try:
@@ -1518,13 +1307,13 @@ class SenyapModal(discord.ui.Modal):
             durasi_text = " **permanen**"
 
         await interaction.followup.send(
-            f"{emoji} Senyap: **{target}** terkena **{label}**{durasi_text}. "
-            "Tidak ada DM dan tidak ada pengumuman.",
+            f"{emoji} **{target}** terkena **{label}**{durasi_text}. "
+            f"Tidak ada pengumuman di channel; {dm_status}.",
             ephemeral=True,
         )
 
     async def on_error(self, interaction: discord.Interaction, error: Exception):
-        print(f"[SENYAP ERROR] {type(error).__name__}: {error}")
+        print(f"[MODERASI ERROR] {type(error).__name__}: {error}")
         if not interaction.response.is_done():
             await interaction.response.send_message("❌ Terjadi error.", ephemeral=True)
         else:
@@ -1532,23 +1321,36 @@ class SenyapModal(discord.ui.Modal):
 
 
 @bot.tree.command(
-    name="senyap",
-    description="Kick/ban/mute diam-diam (tanpa DM, tanpa pengumuman)"
+    name="moderasi",
+    description="Kick/ban/mute member (tanpa pengumuman di channel)"
 )
-@app_commands.describe(aksi="Jenis tindakan", target="Member yang dituju")
+@app_commands.describe(
+    aksi="Jenis tindakan",
+    target="Member yang dituju",
+    kirim_dm="Kirim alasan ke DM korban? (default: tidak)",
+)
 @app_commands.choices(aksi=[
     app_commands.Choice(name="Kick", value="kick"),
     app_commands.Choice(name="Ban", value="ban"),
     app_commands.Choice(name="Mute", value="mute"),
 ])
 @app_commands.guild_only()
-async def senyap(
+async def moderasi(
     interaction: discord.Interaction,
     aksi: app_commands.Choice[str],
     target: discord.Member,
+    kirim_dm: bool = False,
 ):
     action = aksi.value
     _, _, perm = MOD_INFO[action]
+
+    if MODERASI_ALLOWED_ROLE_IDS and not any(
+        r.id in MODERASI_ALLOWED_ROLE_IDS for r in interaction.user.roles
+    ):
+        await interaction.response.send_message(
+            "❌ Role lu tidak diizinkan pakai /moderasi.", ephemeral=True
+        )
+        return
 
     if not getattr(interaction.user.guild_permissions, perm):
         await interaction.response.send_message(
@@ -1567,9 +1369,30 @@ async def senyap(
         await interaction.response.send_message(f"❌ {masalah}", ephemeral=True)
         return
 
-    await interaction.response.send_modal(SenyapModal(action, target))
+    await interaction.response.send_modal(ModerasiModal(action, target, kirim_dm))
 
-# Jalankan bot
+
+# ---------- Auto-unban untuk ban berdurasi ----------
+@tasks.loop(minutes=1)
+async def check_tempbans():
+    now = int(time.time())
+    async for doc in db.db["tempbans"].find({"unban_at": {"$lte": now}}):
+        guild = bot.get_guild(doc["guild_id"])
+        if guild is not None:
+            try:
+                await guild.unban(discord.Object(id=doc["user_id"]), reason="Tempban selesai")
+            except discord.NotFound:
+                pass  # sudah di-unban manual
+            except discord.Forbidden:
+                print(f"[TEMPBAN] Tidak bisa unban {doc['user_id']} di {guild.name} (izin kurang).")
+                continue
+        await db.db["tempbans"].delete_one({"_id": doc["_id"]})
+
+
+@check_tempbans.before_loop
+async def before_check_tempbans():
+    await bot.wait_until_ready()
+
 if TOKEN is None:
     raise RuntimeError(
         "DISCORD_TOKEN tidak ditemukan. Pastikan file .env ada dan berisi DISCORD_TOKEN=token_kamu"
